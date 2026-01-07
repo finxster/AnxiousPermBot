@@ -6,6 +6,9 @@ export default {
     totalChecks: 0
   },
 
+  // Constants
+  WEEKDAY_NAMES: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+
   async fetch(request, env, ctx) {
     // Initialize history for this request if needed
     if (!this.history) {
@@ -566,8 +569,8 @@ export default {
             <h3>📊 Generate & View Reports</h3>
             <p>Generate reports and view them here on the web page:</p>
             <div class="button-group">
-              <button class="secondary" onclick="generateReport('daily')">Generate Daily Report</button>
-              <button class="secondary" onclick="generateReport('weekly')">Generate Weekly Report</button>
+              <button class="secondary" onclick="generateReport('daily')" aria-label="Generate and display daily PERM report">Generate Daily Report</button>
+              <button class="secondary" onclick="generateReport('weekly')" aria-label="Generate and display weekly PERM report">Generate Weekly Report</button>
             </div>
           </div>
           
@@ -629,7 +632,11 @@ export default {
               });
               
               if (!response.ok) {
-                throw new Error(await response.text());
+                const errorText = await response.text();
+                const statusMsg = response.status === 500 ? 'Server error' : 
+                                 response.status === 503 ? 'Service unavailable' :
+                                 \`Error (\${response.status})\`;
+                throw new Error(\`\${statusMsg}: \${errorText}\`);
               }
               
               const html = await response.text();
@@ -771,8 +778,18 @@ export default {
     const currentData = await this.fetchPERMData(env);
     
     if (this.history.weeklyChecks.length === 0) {
-      // If no weekly history, show daily report instead
-      return this.generateDailyReportHTML(env);
+      // If no weekly history, show a message
+      return `
+        <div class="report-header">
+          📊 Weekly Summary - Not Available
+        </div>
+        <div class="report-section">
+          <div class="alert-box info">
+            <strong>No weekly data available yet.</strong><br>
+            Weekly reports require multiple daily checks throughout the week. Please check back after the scheduled daily reports have run for several days.
+          </div>
+        </div>
+      `;
     }
     
     const { employer_first_letter } = currentData;
@@ -812,7 +829,7 @@ export default {
     `;
     
     week.forEach((check, index) => {
-      const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(check.timestamp).getDay()];
+      const day = this.WEEKDAY_NAMES[new Date(check.timestamp).getDay()];
       html += `
             <tr>
               <td>${day}</td>
@@ -833,7 +850,7 @@ export default {
     const last = week[week.length - 1];
     const positionProgress = first.position - last.position;
     const daysProgress = first.remainingDays - last.remainingDays;
-    const dailyAverage = (positionProgress / week.length).toFixed(0);
+    const dailyAverage = week.length > 0 ? (positionProgress / week.length).toFixed(0) : '0';
     
     html += `
       <div class="report-section">
