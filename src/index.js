@@ -6,6 +6,14 @@ export default {
     totalChecks: 0
   },
 
+  // Constants
+  WEEKDAY_NAMES: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  
+  // Thresholds for alerts and insights
+  THRESHOLD_SIGNIFICANT_PROGRESS: 1000,
+  THRESHOLD_FINAL_THIRD: 100,
+  THRESHOLD_SIGNIFICANT_TIME_GAIN: 7,
+
   async fetch(request, env, ctx) {
     // Initialize history for this request if needed
     if (!this.history) {
@@ -181,7 +189,7 @@ export default {
           percentage: percentage
         };
         
-        if (improvement > 1000) {
+        if (improvement > this.THRESHOLD_SIGNIFICANT_PROGRESS) {
           analysis.alerts.push(`🚀 MOVED UP ${improvement.toLocaleString()} positions in queue!`);
         }
       }
@@ -347,6 +355,17 @@ export default {
     return this.sendToMultipleTelegramChats(env, message);
   },
 
+  // HTML escaping utility to prevent XSS
+  escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
   formatDate(dateString) {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
@@ -370,50 +389,240 @@ export default {
       <head>
         <title>PERM Tracker Pro</title>
         <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-          body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
-          .card { background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; }
-          button { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 16px; margin: 5px; }
-          button:hover { background: #0056b3; }
-          .status { margin-top: 20px; padding: 15px; border-radius: 8px; background: #f8f9fa; }
-          .chat-list { margin-top: 10px; padding: 10px; background: #e9ecef; border-radius: 5px; }
-          .chat-item { padding: 5px; font-family: monospace; }
+          body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            max-width: 900px; 
+            margin: 40px auto; 
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+          }
+          .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+          }
+          h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+          }
+          .card { 
+            background: #f8f9fa; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+          .card h3 {
+            margin-top: 0;
+            color: #333;
+          }
+          button { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            border: none; 
+            padding: 12px 24px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            margin: 5px;
+            transition: all 0.3s ease;
+            font-weight: 600;
+          }
+          button:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+          }
+          @media (prefers-reduced-motion: reduce) {
+            button {
+              transition: none;
+            }
+            button:hover {
+              transform: none;
+            }
+          }
+          button.secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+          }
+          button.secondary:hover {
+            box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4);
+          }
+          .status { 
+            margin-top: 20px; 
+            padding: 15px; 
+            border-radius: 8px; 
+            background: #f8f9fa;
+            min-height: 50px;
+          }
+          .chat-list { 
+            margin-top: 10px; 
+            padding: 10px; 
+            background: #e9ecef; 
+            border-radius: 5px; 
+          }
+          .chat-item { 
+            padding: 5px; 
+            font-family: monospace; 
+          }
+          #reportResult {
+            margin-top: 20px;
+            padding: 25px;
+            background: white;
+            border-radius: 12px;
+            border: 2px solid #667eea;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: none;
+          }
+          #reportResult.show {
+            display: block;
+            animation: fadeIn 0.5s ease;
+          }
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            #reportResult.show {
+              animation: none;
+            }
+          }
+          .report-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+            font-weight: bold;
+          }
+          .report-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+          }
+          .report-section h4 {
+            margin-top: 0;
+            color: #667eea;
+          }
+          .report-item {
+            padding: 8px 0;
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #e0e0e0;
+          }
+          .report-item:last-child {
+            border-bottom: none;
+          }
+          .report-item .label {
+            font-weight: 600;
+            color: #555;
+          }
+          .report-item .value {
+            color: #333;
+            font-weight: bold;
+          }
+          .alert-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            color: #856404;
+          }
+          .alert-box.success {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+          }
+          .alert-box.info {
+            background: #d1ecf1;
+            border-color: #17a2b8;
+            color: #0c5460;
+          }
+          .weekly-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+          }
+          .weekly-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: left;
+          }
+          .weekly-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e0e0e0;
+          }
+          .weekly-table tr:hover {
+            background: #f8f9fa;
+          }
+          .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
         </style>
       </head>
       <body>
-        <h1>🤖 PERM Tracker Pro</h1>
-        
-        <div class="card">
-          <h3>🔔 Active Schedule</h3>
-          <p><strong>Daily:</strong> Monday to Saturday, 6:00 AM</p>
-          <p><strong>Weekly:</strong> Sunday, 6:00 AM</p>
-          <p><em>Note: All times in UTC</em></p>
-        </div>
-        
-        <div class="card">
-          <h3>⚡ Quick Tests</h3>
-          <p>Test the reports manually:</p>
-          <button onclick="test('daily')">Test Daily Report</button>
-          <button onclick="test('weekly')">Test Weekly Report</button>
-        </div>
-        
-        <div class="card">
-          <h3>📊 Current Status</h3>
-          <p>Submit Date: <strong>December 19, 2024</strong></p>
-          <p>Employer Letter: <strong>A</strong></p>
-          <p>Total Checks: <strong>${totalChecks}</strong></p>
-          <p>Checks This Week: <strong>${weeklyChecks}</strong></p>
-          <p>Telegram Chats: <strong>${chatIds.length}</strong></p>
-          ${chatIds.length > 0 ? `
-            <div class="chat-list">
-              ${chatIds.map((id, index) => 
-                `<div class="chat-item">${index + 1}. ${id}</div>`
-              ).join('')}
+        <div class="container">
+          <h1>🤖 PERM Tracker Pro</h1>
+          
+          <div class="card">
+            <h3>🔔 Active Schedule</h3>
+            <p><strong>Daily:</strong> Monday to Saturday, 6:00 AM UTC</p>
+            <p><strong>Weekly:</strong> Sunday, 6:00 AM UTC</p>
+          </div>
+          
+          <div class="card">
+            <h3>⚡ Test Schedulers (Send to Telegram)</h3>
+            <p>Test the scheduled reports by sending them to Telegram:</p>
+            <div class="button-group">
+              <button onclick="test('daily')">Test Daily Report</button>
+              <button onclick="test('weekly')">Test Weekly Report</button>
             </div>
-          ` : '<p style="color: #dc3545;">⚠️ No Telegram chat IDs configured</p>'}
+          </div>
+          
+          <div class="card">
+            <h3>📊 Generate & View Reports</h3>
+            <p>Generate reports and view them here on the web page:</p>
+            <div class="button-group">
+              <button class="secondary" onclick="generateReport('daily')" aria-label="Generate and display daily PERM report">Generate Daily Report</button>
+              <button class="secondary" onclick="generateReport('weekly')" aria-label="Generate and display weekly PERM report">Generate Weekly Report</button>
+            </div>
+          </div>
+          
+          <div class="card">
+            <h3>📋 Current Status</h3>
+            <p>Submit Date: <strong>December 19, 2024</strong></p>
+            <p>Employer Letter: <strong>A</strong></p>
+            <p>Total Checks: <strong>${totalChecks}</strong></p>
+            <p>Checks This Week: <strong>${weeklyChecks}</strong></p>
+            <p>Telegram Chats: <strong>${chatIds.length}</strong></p>
+            ${chatIds.length > 0 ? `
+              <div class="chat-list">
+                ${chatIds.map((id, index) => 
+                  `<div class="chat-item">${index + 1}. ${id}</div>`
+                ).join('')}
+              </div>
+            ` : '<p style="color: #dc3545;">⚠️ No Telegram chat IDs configured</p>'}
+          </div>
+          
+          <div id="status" class="status"></div>
+          
+          <div id="reportResult" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
-        
-        <div id="status" class="status"></div>
         
         <script>
           async function test(type) {
@@ -435,6 +644,41 @@ export default {
               status.innerHTML = '❌ Error: ' + error.message;
             }
           }
+          
+          async function generateReport(type) {
+            const status = document.getElementById('status');
+            const reportResult = document.getElementById('reportResult');
+            
+            status.innerHTML = '⏳ Generating report...';
+            reportResult.innerHTML = '';
+            reportResult.classList.remove('show');
+            
+            try {
+              const response = await fetch('/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: type, display: true })
+              });
+              
+              if (!response.ok) {
+                const errorText = await response.text();
+                const statusMsg = response.status === 500 ? 'Server error' : 
+                                 response.status === 503 ? 'Service unavailable' :
+                                 'Error (' + response.status + ')';
+                throw new Error(statusMsg + ': ' + errorText);
+              }
+              
+              const html = await response.text();
+              reportResult.innerHTML = html;
+              reportResult.classList.add('show');
+              status.textContent = '✅ Report generated successfully!';
+              
+              // Scroll to report
+              reportResult.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (error) {
+              status.textContent = '❌ Error: ' + error.message;
+            }
+          }
         </script>
       </body>
       </html>
@@ -445,7 +689,23 @@ export default {
     try {
       const body = await request.json().catch(() => ({}));
       
-      if (body.type === 'weekly') {
+      // Validate type parameter
+      const validTypes = ['daily', 'weekly'];
+      const type = validTypes.includes(body.type) ? body.type : 'daily';
+      
+      // Check if this is a display request (show in web page)
+      if (body.display) {
+        let html;
+        if (type === 'weekly') {
+          html = await this.generateWeeklyReportHTML(env);
+        } else {
+          html = await this.generateDailyReportHTML(env);
+        }
+        return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+      }
+      
+      // Otherwise, send to Telegram
+      if (type === 'weekly') {
         await this.sendWeeklyReport(env);
         return new Response('✅ Weekly report sent to all chats!');
       } else {
@@ -453,7 +713,267 @@ export default {
         return new Response('✅ Daily report sent to all chats!');
       }
     } catch (error) {
-      return new Response(`❌ Error: ${error.message}`, { status: 500 });
+      // Set appropriate content type for errors
+      const contentType = error.message.includes('HTML') ? 'text/html' : 'text/plain';
+      return new Response(`❌ Error: ${error.message}`, { 
+        status: 500,
+        headers: { 'Content-Type': contentType }
+      });
     }
+  },
+
+  /**
+   * Generates the daily PERM status report as an HTML string.
+   *
+   * This function fetches the latest PERM data, performs change analysis,
+   * updates the in-memory history for daily checks, and builds a formatted
+   * HTML report suitable for rendering in a browser.
+   *
+   * @param {any} env - Execution environment object containing configuration
+   *   and bindings required to fetch and analyze PERM data.
+   * @returns {Promise<string>} A promise that resolves to the generated HTML
+   *   markup for the daily report.
+   *
+   * @sideeffect Updates this.history via updateHistory with the
+   *   latest daily check data.
+   */
+  async generateDailyReportHTML(env) {
+    const data = await this.fetchPERMData(env);
+    const analysis = await this.analyzeChanges(data);
+    
+    // Update history
+    this.updateHistory(data, 'daily');
+    
+    const { estimated_completion_date, submit_date, confidence_level, remaining_days } = data;
+    const { current_backlog, adjusted_queue_position, weekly_processing_rate, estimated_queue_wait_weeks } = data.queue_analysis;
+    
+    const estimatedDate = this.formatDate(estimated_completion_date);
+    const submitDate = this.formatDate(submit_date);
+    const confidence = Math.round(confidence_level * 100);
+    const today = this.formatDate(new Date().toISOString());
+    
+    let html = `
+      <div class="report-header">
+        📅 Daily Report - ${today}
+      </div>
+      
+      <div class="report-section">
+        <h4>📊 Key Information</h4>
+        <div class="report-item">
+          <span class="label">🗓️ Estimated Completion Date:</span>
+          <span class="value">${estimatedDate}</span>
+        </div>
+        <div class="report-item">
+          <span class="label">🎯 Confidence Level:</span>
+          <span class="value">${confidence}%</span>
+        </div>
+        <div class="report-item">
+          <span class="label">📋 Submit Date:</span>
+          <span class="value">${submitDate}</span>
+        </div>
+        <div class="report-item">
+          <span class="label">⏱️ Days Remaining:</span>
+          <span class="value">${remaining_days} days</span>
+        </div>
+      </div>
+      
+      <div class="report-section">
+        <h4>📈 Queue Analysis</h4>
+        <div class="report-item">
+          <span class="label">Current Position:</span>
+          <span class="value">#${adjusted_queue_position.toLocaleString()}</span>
+        </div>
+        <div class="report-item">
+          <span class="label">Cases Ahead in Queue:</span>
+          <span class="value">${current_backlog.toLocaleString()}</span>
+        </div>
+        <div class="report-item">
+          <span class="label">Processing Rate:</span>
+          <span class="value">${weekly_processing_rate.toLocaleString()}/week</span>
+        </div>
+        <div class="report-item">
+          <span class="label">Estimated Wait:</span>
+          <span class="value">~${estimated_queue_wait_weeks.toFixed(1)} weeks</span>
+        </div>
+      </div>
+    `;
+    
+    // Add alerts if any
+    if (analysis.alerts.length > 0) {
+      html += `
+        <div class="report-section">
+          <h4>🔔 Alerts</h4>
+      `;
+      analysis.alerts.forEach(alert => {
+        // Classify alert based on content
+        const alertText = this.escapeHtml(alert);
+        const lowerAlert = String(alert).toLowerCase();
+        let alertClass = 'info';
+
+        if (lowerAlert.includes('moved up') || lowerAlert.includes('gained')) {
+          alertClass = 'success';
+        } else if (lowerAlert.includes('lost')) {
+          alertClass = '';  // Default warning color
+        }
+
+        html += `<div class="alert-box ${alertClass}">${alertText}</div>`;
+      });
+      html += `</div>`;
+    }
+    
+    // Add comparative analysis
+    if (analysis.positionImprovement) {
+      html += `
+        <div class="report-section">
+          <h4>📊 Comparison with Last Check</h4>
+          <div class="alert-box success">
+            <strong>Position Improvement:</strong> ${analysis.positionImprovement.amount.toLocaleString()} positions better (${analysis.positionImprovement.percentage}% improvement)
+          </div>
+        </div>
+      `;
+    }
+    
+    return html;
+  },
+
+  /**
+   * Generates an HTML weekly summary report for the current PERM data.
+   *
+   * This uses the accumulated entries in history.weeklyChecks to build a
+   * week-long view of position and days-left trends for the current employer
+   * first-letter grouping. If no weekly history is available yet (i.e.,
+   * history.weeklyChecks is empty), an informational HTML message is
+   * returned explaining that weekly data is not yet available.
+   *
+   * @param {any} env - Environment object passed in by the runtime, used by
+   *   fetchPERMData to retrieve the latest PERM statistics.
+   * @returns {Promise<string>} A promise that resolves to an HTML string
+   *   representing the weekly report or an informational message when weekly
+   *   data is not yet available.
+   */
+  async generateWeeklyReportHTML(env) {
+    const currentData = await this.fetchPERMData(env);
+    
+    if (this.history.weeklyChecks.length === 0) {
+      // If no weekly history, show a message
+      return `
+        <div class="report-header">
+          📊 Weekly Summary - Not Available
+        </div>
+        <div class="report-section">
+          <div class="alert-box info">
+            <strong>No weekly data available yet.</strong><br>
+            Weekly reports require multiple daily checks throughout the week. Please check back after the scheduled daily reports have run for several days.
+          </div>
+        </div>
+      `;
+    }
+    
+    const { employer_first_letter } = currentData;
+    const week = this.history.weeklyChecks;
+    
+    const firstDate = this.formatDate(week[0].timestamp);
+    const lastDate = this.formatDate(new Date().toISOString());
+    
+    let html = `
+      <div class="report-header">
+        📊 Weekly Summary - Letter ${this.escapeHtml(employer_first_letter)}
+      </div>
+      
+      <div class="report-section">
+        <h4>📅 Period</h4>
+        <div class="report-item">
+          <span class="label">From:</span>
+          <span class="value">${firstDate}</span>
+        </div>
+        <div class="report-item">
+          <span class="label">To:</span>
+          <span class="value">${lastDate}</span>
+        </div>
+      </div>
+      
+      <div class="report-section">
+        <h4>📈 Weekly Progress</h4>
+        <table class="weekly-table">
+          <thead>
+            <tr>
+              <th>Day</th>
+              <th>Position</th>
+              <th>Days Left</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    
+    week.forEach((check, index) => {
+      const day = this.WEEKDAY_NAMES[new Date(check.timestamp).getDay()];
+      html += `
+            <tr>
+              <td>${day}</td>
+              <td>#${check.position.toLocaleString()}</td>
+              <td>${check.remainingDays} days</td>
+            </tr>
+      `;
+    });
+    
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+    
+    // Statistics
+    const first = week[0];
+    const last = week[week.length - 1];
+    const positionProgress = first.position - last.position;
+    const daysProgress = first.remainingDays - last.remainingDays;
+    const dailyAverage = (positionProgress / week.length).toFixed(0);
+    
+    html += `
+      <div class="report-section">
+        <h4>📊 Weekly Statistics</h4>
+        <div class="report-item">
+          <span class="label">Queue Progress:</span>
+          <span class="value">${positionProgress > 0 ? '+' : ''}${positionProgress.toLocaleString()} positions</span>
+        </div>
+        <div class="report-item">
+          <span class="label">Time Gain/Loss:</span>
+          <span class="value">${daysProgress > 0 ? '+' : ''}${daysProgress} days</span>
+        </div>
+        <div class="report-item">
+          <span class="label">Daily Average:</span>
+          <span class="value">${dailyAverage} positions/day</span>
+        </div>
+        <div class="report-item">
+          <span class="label">Trend:</span>
+          <span class="value">${positionProgress > 0 ? '⏫ Accelerating' : '⏬ Decelerating'}</span>
+        </div>
+      </div>
+    `;
+    
+    // Insights
+    const insights = [];
+    if (positionProgress > this.THRESHOLD_SIGNIFICANT_PROGRESS) {
+      insights.push('🎉 Great week! Processing above average');
+    }
+    if (last.remainingDays < this.THRESHOLD_FINAL_THIRD) {
+      insights.push('🎯 You\'re in the final third of the process');
+    }
+    if (daysProgress > this.THRESHOLD_SIGNIFICANT_TIME_GAIN) {
+      insights.push('⚡ Significant time gain this week');
+    }
+    
+    if (insights.length > 0) {
+      html += `
+        <div class="report-section">
+          <h4>💡 Insights</h4>
+      `;
+      insights.forEach(insight => {
+        html += `<div class="alert-box info">${this.escapeHtml(insight)}</div>`;
+      });
+      html += `</div>`;
+    }
+    
+    return html;
   }
 };
