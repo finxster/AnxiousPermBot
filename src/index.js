@@ -8,6 +8,11 @@ export default {
 
   // Constants
   WEEKDAY_NAMES: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  
+  // Thresholds for alerts and insights
+  THRESHOLD_SIGNIFICANT_PROGRESS: 1000,
+  THRESHOLD_FINAL_THIRD: 100,
+  THRESHOLD_SIGNIFICANT_TIME_GAIN: 7,
 
   async fetch(request, env, ctx) {
     // Initialize history for this request if needed
@@ -184,7 +189,7 @@ export default {
           percentage: percentage
         };
         
-        if (improvement > 1000) {
+        if (improvement > this.THRESHOLD_SIGNIFICANT_PROGRESS) {
           analysis.alerts.push(`🚀 MOVED UP ${improvement.toLocaleString()} positions in queue!`);
         }
       }
@@ -350,6 +355,17 @@ export default {
     return this.sendToMultipleTelegramChats(env, message);
   },
 
+  // HTML escaping utility to prevent XSS
+  escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
   formatDate(dateString) {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
@@ -423,6 +439,14 @@ export default {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
           }
+          @media (prefers-reduced-motion: reduce) {
+            button {
+              transition: none;
+            }
+            button:hover {
+              transform: none;
+            }
+          }
           button.secondary {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
           }
@@ -462,6 +486,11 @@ export default {
           @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            #reportResult.show {
+              animation: none;
+            }
           }
           .report-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -592,7 +621,7 @@ export default {
           
           <div id="status" class="status"></div>
           
-          <div id="reportResult"></div>
+          <div id="reportResult" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
         
         <script>
@@ -635,19 +664,19 @@ export default {
                 const errorText = await response.text();
                 const statusMsg = response.status === 500 ? 'Server error' : 
                                  response.status === 503 ? 'Service unavailable' :
-                                 \`Error (\${response.status})\`;
-                throw new Error(\`\${statusMsg}: \${errorText}\`);
+                                 'Error (' + response.status + ')';
+                throw new Error(statusMsg + ': ' + errorText);
               }
               
               const html = await response.text();
               reportResult.innerHTML = html;
               reportResult.classList.add('show');
-              status.innerHTML = '✅ Report generated successfully!';
+              status.textContent = '✅ Report generated successfully!';
               
               // Scroll to report
               reportResult.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } catch (error) {
-              status.innerHTML = '❌ Error: ' + error.message;
+              status.textContent = '❌ Error: ' + error.message;
             }
           }
         </script>
@@ -660,19 +689,23 @@ export default {
     try {
       const body = await request.json().catch(() => ({}));
       
+      // Validate type parameter
+      const validTypes = ['daily', 'weekly'];
+      const type = validTypes.includes(body.type) ? body.type : 'daily';
+      
       // Check if this is a display request (show in web page)
       if (body.display) {
-        if (body.type === 'weekly') {
-          const html = await this.generateWeeklyReportHTML(env);
-          return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+        let html;
+        if (type === 'weekly') {
+          html = await this.generateWeeklyReportHTML(env);
         } else {
-          const html = await this.generateDailyReportHTML(env);
-          return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+          html = await this.generateDailyReportHTML(env);
         }
+        return new Response(html, { headers: { 'Content-Type': 'text/html' } });
       }
       
       // Otherwise, send to Telegram
-      if (body.type === 'weekly') {
+      if (type === 'weekly') {
         await this.sendWeeklyReport(env);
         return new Response('✅ Weekly report sent to all chats!');
       } else {
@@ -680,10 +713,30 @@ export default {
         return new Response('✅ Daily report sent to all chats!');
       }
     } catch (error) {
-      return new Response(`❌ Error: ${error.message}`, { status: 500 });
+      // Set appropriate content type for errors
+      const contentType = error.message.includes('HTML') ? 'text/html' : 'text/plain';
+      return new Response(`❌ Error: ${error.message}`, { 
+        status: 500,
+        headers: { 'Content-Type': contentType }
+      });
     }
   },
 
+  /**
+   * Generates the daily PERM status report as an HTML string.
+   *
+   * This function fetches the latest PERM data, performs change analysis,
+   * updates the in-memory history for daily checks, and builds a formatted
+   * HTML report suitable for rendering in a browser.
+   *
+   * @param {any} env - Execution environment object containing configuration
+   *   and bindings required to fetch and analyze PERM data.
+   * @returns {Promise<string>} A promise that resolves to the generated HTML
+   *   markup for the daily report.
+   *
+   * @sideeffect Updates this.history via updateHistory with the
+   *   latest daily check data.
+   */
   async generateDailyReportHTML(env) {
     const data = await this.fetchPERMData(env);
     const analysis = await this.analyzeChanges(data);
@@ -752,9 +805,18 @@ export default {
           <h4>🔔 Alerts</h4>
       `;
       analysis.alerts.forEach(alert => {
-        const alertClass = alert.includes('MOVED UP') || alert.includes('Gained') ? 'success' : 
-                          alert.includes('Lost') ? '' : 'info';
-        html += `<div class="alert-box ${alertClass}">${alert}</div>`;
+        // Classify alert based on content
+        const alertText = this.escapeHtml(alert);
+        const lowerAlert = String(alert).toLowerCase();
+        let alertClass = 'info';
+
+        if (lowerAlert.includes('moved up') || lowerAlert.includes('gained')) {
+          alertClass = 'success';
+        } else if (lowerAlert.includes('lost')) {
+          alertClass = '';  // Default warning color
+        }
+
+        html += `<div class="alert-box ${alertClass}">${alertText}</div>`;
       });
       html += `</div>`;
     }
@@ -774,6 +836,21 @@ export default {
     return html;
   },
 
+  /**
+   * Generates an HTML weekly summary report for the current PERM data.
+   *
+   * This uses the accumulated entries in history.weeklyChecks to build a
+   * week-long view of position and days-left trends for the current employer
+   * first-letter grouping. If no weekly history is available yet (i.e.,
+   * history.weeklyChecks is empty), an informational HTML message is
+   * returned explaining that weekly data is not yet available.
+   *
+   * @param {any} env - Environment object passed in by the runtime, used by
+   *   fetchPERMData to retrieve the latest PERM statistics.
+   * @returns {Promise<string>} A promise that resolves to an HTML string
+   *   representing the weekly report or an informational message when weekly
+   *   data is not yet available.
+   */
   async generateWeeklyReportHTML(env) {
     const currentData = await this.fetchPERMData(env);
     
@@ -800,7 +877,7 @@ export default {
     
     let html = `
       <div class="report-header">
-        📊 Weekly Summary - Letter ${employer_first_letter}
+        📊 Weekly Summary - Letter ${this.escapeHtml(employer_first_letter)}
       </div>
       
       <div class="report-section">
@@ -850,7 +927,7 @@ export default {
     const last = week[week.length - 1];
     const positionProgress = first.position - last.position;
     const daysProgress = first.remainingDays - last.remainingDays;
-    const dailyAverage = week.length > 0 ? (positionProgress / week.length).toFixed(0) : '0';
+    const dailyAverage = (positionProgress / week.length).toFixed(0);
     
     html += `
       <div class="report-section">
@@ -876,13 +953,13 @@ export default {
     
     // Insights
     const insights = [];
-    if (positionProgress > 1000) {
+    if (positionProgress > this.THRESHOLD_SIGNIFICANT_PROGRESS) {
       insights.push('🎉 Great week! Processing above average');
     }
-    if (last.remainingDays < 100) {
+    if (last.remainingDays < this.THRESHOLD_FINAL_THIRD) {
       insights.push('🎯 You\'re in the final third of the process');
     }
-    if (daysProgress > 7) {
+    if (daysProgress > this.THRESHOLD_SIGNIFICANT_TIME_GAIN) {
       insights.push('⚡ Significant time gain this week');
     }
     
@@ -892,7 +969,7 @@ export default {
           <h4>💡 Insights</h4>
       `;
       insights.forEach(insight => {
-        html += `<div class="alert-box info">${insight}</div>`;
+        html += `<div class="alert-box info">${this.escapeHtml(insight)}</div>`;
       });
       html += `</div>`;
     }
