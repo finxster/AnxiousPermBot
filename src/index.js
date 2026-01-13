@@ -2,7 +2,6 @@ export default {
   // Initialize history inside the module
   history: {
     lastCheck: null,
-    weeklyChecks: [],
     totalChecks: 0
   },
 
@@ -19,7 +18,6 @@ export default {
     if (!this.history) {
       this.history = {
         lastCheck: null,
-        weeklyChecks: [],
         totalChecks: 0
       };
     }
@@ -42,13 +40,12 @@ export default {
     if (!this.history) {
       this.history = {
         lastCheck: null,
-        weeklyChecks: [],
         totalChecks: 0
       };
     }
     
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday... 
+    const dayOfWeek = now.getUTCDay(); // 0 = Sunday, 1 = Monday... (using UTC time)
     
     try {
       // Sunday:  Weekly report
@@ -81,16 +78,92 @@ export default {
     this.updateHistory(data, 'daily');
   },
 
+  async fetchRecentReportsFromTelegram(env) {
+    console.log('📥 Fetching recent reports from Telegram chat history...');
+    
+    const chatIds = this.parseChatIds(env.TELEGRAM_CHAT_ID);
+    if (chatIds.length === 0) {
+      console.warn('⚠️ No chat IDs configured, cannot fetch history');
+      return [];
+    }
+    
+    // Use the first chat ID to fetch history
+    const chatId = chatIds[0];
+    const telegramUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getUpdates`;
+    
+    try {
+      const response = await fetch(telegramUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const result = await response.json();
+      
+      if (!result.ok) {
+        console.error('❌ Failed to fetch Telegram updates:', result.description);
+        return [];
+      }
+      
+      // Filter messages from bot to the specific chat that contain daily reports
+      const botMessages = result.result
+        .filter(update => 
+          update.message && 
+          update.message.from && 
+          update.message.from.is_bot &&
+          update.message.chat.id.toString() === chatId &&
+          update.message.text &&
+          update.message.text.includes('DAILY REPORT')
+        )
+        .map(update => update.message)
+        .slice(-6); // Get last 6 daily reports
+      
+      console.log(`✅ Found ${botMessages.length} recent daily reports in chat history`);
+      
+      // Parse the messages to extract data
+      const parsedReports = botMessages.map(msg => this.parseDailyReportMessage(msg.text, msg.date));
+      
+      return parsedReports.filter(report => report !== null);
+    } catch (error) {
+      console.error('❌ Error fetching Telegram history:', error.message);
+      return [];
+    }
+  },
+
+  parseDailyReportMessage(messageText, timestamp) {
+    try {
+      // Parse position from message like "• Current Position: #45,600"
+      const positionMatch = messageText.match(/Current Position:\s*#([\d,]+)/);
+      // Parse days remaining from message like "• Days Remaining: ⏱️ 152 days"
+      const daysMatch = messageText.match(/Days Remaining:\s*⏱️\s*(\d+)\s*days/);
+      
+      if (!positionMatch || !daysMatch) {
+        console.warn('⚠️ Could not parse report data from message');
+        return null;
+      }
+      
+      const position = parseInt(positionMatch[1].replace(/,/g, ''));
+      const remainingDays = parseInt(daysMatch[1]);
+      
+      return {
+        timestamp: new Date(timestamp * 1000).toISOString(),
+        position: position,
+        remainingDays: remainingDays
+      };
+    } catch (error) {
+      console.error('❌ Error parsing daily report message:', error.message);
+      return null;
+    }
+  },
+
   async sendWeeklyReport(env) {
     console.log('📊 Sending weekly report...');
     
     const currentData = await this.fetchPERMData(env);
-    const weeklyMessage = await this.formatWeeklyMessage(currentData);
+    const weeklyData = await this.fetchRecentReportsFromTelegram(env);
+    const weeklyMessage = await this.formatWeeklyMessage(currentData, weeklyData);
     
     await this.sendToMultipleTelegramChats(env, weeklyMessage);
     
-    // Reset weekly history
-    this.history.weeklyChecks = [];
     this.history.totalChecks++;
   },
 
@@ -226,15 +299,6 @@ export default {
     };
     
     this.history.lastCheck = record;
-    
-    if (type === 'daily') {
-      this.history.weeklyChecks.push(record);
-    }
-    
-    // Keep only last 7 days in memory
-    if (this.history. weeklyChecks.length > 7) {
-      this.history.weeklyChecks.shift();
-    }
   },
 
   // ========== FORMATTING FUNCTIONS ==========
@@ -279,16 +343,16 @@ export default {
     return message;
   },
 
-  async formatWeeklyMessage(currentData) {
-    if (this.history.weeklyChecks. length === 0) {
-      return this.formatDailyMessage(currentData, { alerts: [] });
+  async formatWeeklyMessage(currentData, weeklyData = []) {
+    // If no weekly data from chat history, return a message indicating insufficient data
+    if (weeklyData.length === 0) {
+      return `*📊 WEEKLY SUMMARY*\n\n_Unable to generate weekly report: No historical data found in chat history._\n\nPlease ensure daily reports have been sent for at least a few days to generate a weekly summary.`;
     }
     
     const { employer_first_letter } = currentData;
-    const week = this.history.weeklyChecks;
     
     let message = `*📊 WEEKLY SUMMARY - Letter ${employer_first_letter}*\n`;
-    message += `_Period: ${this.formatDate(week[0].timestamp)} to ${this.formatDate(new Date().toISOString())}_\n\n`;
+    message += `_Period: ${this.formatDate(weeklyData[0].timestamp)} to ${this.formatDate(new Date().toISOString())}_\n\n`;
     
     // Progress table
     message += `*📈 WEEKLY PROGRESS:*\n`;
@@ -296,22 +360,22 @@ export default {
     message += 'Day      Position    Days Left\n';
     message += '------------------------------\n';
     
-    week.forEach((check, index) => {
-      const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(check.timestamp).getDay()];
-      message += `${day.padEnd(6)} #${check.position.toLocaleString().padEnd(10)} ${check.remainingDays. toString().padEnd(4)} days\n`;
+    weeklyData.forEach((check, index) => {
+      const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(check.timestamp).getUTCDay()];
+      message += `${day.padEnd(6)} #${check.position.toLocaleString().padEnd(10)} ${check.remainingDays.toString().padEnd(4)} days\n`;
     });
     message += '```\n\n';
     
     // Statistics
-    const first = week[0];
-    const last = week[week.length - 1];
+    const first = weeklyData[0];
+    const last = weeklyData[weeklyData.length - 1];
     const positionProgress = first.position - last.position;
-    const daysProgress = first. remainingDays - last.remainingDays;
+    const daysProgress = first.remainingDays - last.remainingDays;
     
     message += `*📊 WEEKLY STATISTICS:*\n`;
     message += `• Queue progress: ${positionProgress > 0 ? '+' : ''}${positionProgress.toLocaleString()} positions\n`;
     message += `• Time gain/loss: ${daysProgress > 0 ? '+' : ''}${daysProgress} days\n`;
-    message += `• Daily average: ${(positionProgress / week.length).toFixed(0).toLocaleString()} positions/day\n`;
+    message += `• Daily average: ${(positionProgress / weeklyData.length).toFixed(0).toLocaleString()} positions/day\n`;
     message += `• Trend: ${positionProgress > 0 ? '⏫ Accelerating' : '⏬ Decelerating'}\n`;
     
     // Insights
@@ -377,11 +441,10 @@ export default {
   },
 
   renderInterface(env) {
-    const totalChecks = this.history?. totalChecks || 0;
-    const weeklyChecks = this.history?. weeklyChecks?. length || 0;
+    const totalChecks = this.history?.totalChecks || 0;
     
     // Parse chat IDs for display - use env parameter instead of process.env
-    const chatIds = this.parseChatIds(env?. TELEGRAM_CHAT_ID || '');
+    const chatIds = this.parseChatIds(env?.TELEGRAM_CHAT_ID || '');
     
     return new Response(`
       <!DOCTYPE html>
@@ -608,7 +671,6 @@ export default {
             <p>Submit Date: <strong>December 19, 2024</strong></p>
             <p>Employer Letter: <strong>A</strong></p>
             <p>Total Checks: <strong>${totalChecks}</strong></p>
-            <p>Checks This Week: <strong>${weeklyChecks}</strong></p>
             <p>Telegram Chats: <strong>${chatIds.length}</strong></p>
             ${chatIds.length > 0 ? `
               <div class="chat-list">
@@ -839,11 +901,11 @@ export default {
   /**
    * Generates an HTML weekly summary report for the current PERM data.
    *
-   * This uses the accumulated entries in history. weeklyChecks to build a
+   * This fetches recent daily reports from Telegram chat history to build a
    * week-long view of position and days-left trends for the current employer
-   * first-letter grouping.  If no weekly history is available yet (i.e.,
-   * history.weeklyChecks is empty), an informational HTML message is
-   * returned explaining that weekly data is not yet available.
+   * first-letter grouping. If no weekly history is available from chat, an
+   * informational HTML message is returned explaining that weekly data is not
+   * yet available.
    *
    * @param {any} env - Environment object passed in by the runtime, used by
    *   fetchPERMData to retrieve the latest PERM statistics.
@@ -853,8 +915,9 @@ export default {
    */
   async generateWeeklyReportHTML(env) {
     const currentData = await this.fetchPERMData(env);
+    const weeklyData = await this.fetchRecentReportsFromTelegram(env);
     
-    if (this.history.weeklyChecks. length === 0) {
+    if (weeklyData.length === 0) {
       // If no weekly history, show a message
       return `
         <div class="report-header">
@@ -863,16 +926,15 @@ export default {
         <div class="report-section">
           <div class="alert-box info">
             <strong>No weekly data available yet.</strong><br>
-            Weekly reports require multiple daily checks throughout the week.  Please check back after the scheduled daily reports have run for several days.
+            Weekly reports require multiple daily reports to be found in Telegram chat history. Please check back after the scheduled daily reports have run for several days.
           </div>
         </div>
       `;
     }
     
     const { employer_first_letter } = currentData;
-    const week = this.history.weeklyChecks;
     
-    const firstDate = this.formatDate(week[0]. timestamp);
+    const firstDate = this.formatDate(weeklyData[0].timestamp);
     const lastDate = this.formatDate(new Date().toISOString());
     
     let html = `
@@ -905,8 +967,8 @@ export default {
           <tbody>
     `;
     
-    week.forEach((check, index) => {
-      const day = this. WEEKDAY_NAMES[new Date(check.timestamp).getDay()];
+    weeklyData.forEach((check, index) => {
+      const day = this.WEEKDAY_NAMES[new Date(check.timestamp).getUTCDay()];
       html += `
             <tr>
               <td>${day}</td>
@@ -923,11 +985,11 @@ export default {
     `;
     
     // Statistics
-    const first = week[0];
-    const last = week[week.length - 1];
+    const first = weeklyData[0];
+    const last = weeklyData[weeklyData.length - 1];
     const positionProgress = first.position - last.position;
-    const daysProgress = first.remainingDays - last. remainingDays;
-    const dailyAverage = (positionProgress / week.length).toFixed(0);
+    const daysProgress = first.remainingDays - last.remainingDays;
+    const dailyAverage = (positionProgress / weeklyData.length).toFixed(0);
     
     html += `
       <div class="report-section">
