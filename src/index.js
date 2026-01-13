@@ -25,7 +25,7 @@ export default {
     }
 
     if (request.method === 'GET') {
-      return this.renderInterface();
+      return this.renderInterface(env);
     }
 
     if (request.method === 'POST') {
@@ -36,7 +36,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    console.log(`⏰ Scheduled trigger at: ${event.scheduledTime}`);
+    console.log(`⏰ Scheduled trigger at:  ${event.scheduledTime}`);
     
     // Initialize history for scheduled execution
     if (!this.history) {
@@ -48,10 +48,10 @@ export default {
     }
     
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday...
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday... 
     
     try {
-      // Sunday: Weekly report
+      // Sunday:  Weekly report
       if (dayOfWeek === 0) {
         await this.sendWeeklyReport(env);
       } 
@@ -108,21 +108,21 @@ export default {
     
     // Send to all chats in parallel
     const sendPromises = chatIds.map(chatId => 
-      this.sendToSingleTelegramChat(env.TELEGRAM_BOT_TOKEN, chatId, message)
+      this.sendToSingleTelegramChat(env. TELEGRAM_BOT_TOKEN, chatId, message)
     );
     
     const results = await Promise.allSettled(sendPromises);
     
     // Check results
     const successful = results.filter(r => r.status === 'fulfilled').length;
-    const failed = results.filter(r => r.status === 'rejected').length;
+    const failed = results. filter(r => r.status === 'rejected').length;
     
     console.log(`✅ Sent to ${successful} chat(s), ❌ failed for ${failed} chat(s)`);
     
     // If all failed, throw error
     if (failed === chatIds.length) {
       const firstError = results.find(r => r.status === 'rejected');
-      throw new Error(`Failed to send to all chats: ${firstError?.reason?.message || 'Unknown error'}`);
+      throw new Error(`Failed to send to all chats: ${firstError || 'Unknown error'}`);
     }
     
     return {
@@ -140,16 +140,16 @@ export default {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: message,
-        parse_mode: 'Markdown',
+        text:  message,
+        parse_mode:  'Markdown',
         disable_web_page_preview: true
       }),
     });
     
     const result = await response.json();
     
-    if (!result.ok) {
-      throw new Error(`Chat ${chatId}: ${result.description || 'Unknown error'}`);
+    if (! result.ok) {
+      throw new Error(`Chat ${chatId}:  ${result.description || 'Unknown error'}`);
     }
     
     return { chatId, success: true };
@@ -162,7 +162,7 @@ export default {
     return chatIdString
       .split(',')
       .map(id => id.trim())
-      .filter(id => id.length > 0);
+      .filter(id => id. length > 0);
   },
 
   // ========== ANALYSIS FUNCTIONS ==========
@@ -176,8 +176,8 @@ export default {
     
     // Compare with last check
     if (this.history.lastCheck) {
-      const { position: oldPos, remainingDays: oldDays } = this.history.lastCheck;
-      const { adjusted_queue_position: newPos, remaining_days: newDays } = newData.queue_analysis;
+      const { position:  oldPos, remainingDays: oldDays } = this.history.lastCheck;
+      const { adjusted_queue_position: newPos, remaining_days: newDays } = newData. queue_analysis;
       
       // 1. Queue position analysis
       if (newPos < oldPos) {
@@ -190,7 +190,7 @@ export default {
         };
         
         if (improvement > this.THRESHOLD_SIGNIFICANT_PROGRESS) {
-          analysis.alerts.push(`🚀 MOVED UP ${improvement.toLocaleString()} positions in queue!`);
+          analysis.alerts.push(`🚀 MOVED UP ${improvement.toLocaleString()} positions in queue! `);
         }
       }
       
@@ -199,9 +199,9 @@ export default {
       if (Math.abs(dayDifference) >= 3) {
         analysis.timeChange = dayDifference;
         if (dayDifference > 0) {
-          analysis.alerts.push(`⏱️ Gained ${dayDifference} days in estimate!`);
+          analysis.alerts. push(`⏱️ Gained ${dayDifference} days in estimate! `);
         } else {
-          analysis.alerts.push(`⚠️ Lost ${Math.abs(dayDifference)} days in estimate`);
+          analysis.alerts. push(`⚠️ Lost ${Math.abs(dayDifference)} days in estimate`);
         }
       }
       
@@ -209,7 +209,7 @@ export default {
       if (newDays <= 30 && oldDays > 30) {
         analysis.alerts.push(`🎯 ENTERED FINAL MONTH!`);
       } else if (newDays <= 90 && oldDays > 90) {
-        analysis.alerts.push(`📌 ENTERED FINAL QUARTER!`);
+        analysis.alerts. push(`📌 ENTERED FINAL QUARTER!`);
       }
     }
     
@@ -232,7 +232,7 @@ export default {
     }
     
     // Keep only last 7 days in memory
-    if (this.history.weeklyChecks.length > 7) {
+    if (this.history. weeklyChecks.length > 7) {
       this.history.weeklyChecks.shift();
     }
   },
@@ -241,7 +241,7 @@ export default {
 
   async formatDailyMessage(data, analysis) {
     const { estimated_completion_date, submit_date, confidence_level, remaining_days } = data;
-    const { current_backlog, adjusted_queue_position, weekly_processing_rate, estimated_queue_wait_weeks } = data.queue_analysis;
+    const { current_backlog, adjusted_queue_position, weekly_processing_rate, estimated_queue_wait_weeks } = data. queue_analysis;
     
     const estimatedDate = this.formatDate(estimated_completion_date);
     const submitDate = this.formatDate(submit_date);
@@ -249,18 +249,18 @@ export default {
     
     let message = `*📅 DAILY REPORT - ${this.formatDate(new Date().toISOString())}*
 
-*Estimated Date:* 🗓️ *${estimatedDate}* (${confidence}% confidence)
+*Estimated Date: * 🗓️ *${estimatedDate}* (${confidence}% confidence)
 *Submit Date:* 📋 ${submitDate}
 *Days Remaining:* ⏱️ ${remaining_days} days
 
 *📊 Queue Position:*
 • Current Position: #${adjusted_queue_position.toLocaleString()}
-• Ahead in Queue: ${current_backlog.toLocaleString()} cases
+• Ahead in Queue: ${current_backlog. toLocaleString()} cases
 • Processing Rate: ${weekly_processing_rate.toLocaleString()}/week
-• Estimated Wait: ~${estimated_queue_wait_weeks.toFixed(1)} weeks`;
+• Estimated Wait: ~${estimated_queue_wait_weeks. toFixed(1)} weeks`;
 
     // Add alerts if any
-    if (analysis.alerts.length > 0) {
+    if (analysis.alerts. length > 0) {
       message += `\n\n*🔔 ALERTS:*\n`;
       analysis.alerts.forEach(alert => {
         message += `• ${alert}\n`;
@@ -270,7 +270,7 @@ export default {
     // Add comparative analysis
     if (analysis.positionImprovement) {
       message += `\n*📈 VS LAST CHECK:*`;
-      message += `\n• Position: ${analysis.positionImprovement.amount.toLocaleString()} less`;
+      message += `\n• Position:  ${analysis.positionImprovement. amount.toLocaleString()} less`;
       message += `\n• Improvement: ${analysis.positionImprovement.percentage}%`;
     }
     
@@ -280,7 +280,7 @@ export default {
   },
 
   async formatWeeklyMessage(currentData) {
-    if (this.history.weeklyChecks.length === 0) {
+    if (this.history.weeklyChecks. length === 0) {
       return this.formatDailyMessage(currentData, { alerts: [] });
     }
     
@@ -298,7 +298,7 @@ export default {
     
     week.forEach((check, index) => {
       const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(check.timestamp).getDay()];
-      message += `${day.padEnd(6)} #${check.position.toLocaleString().padEnd(10)} ${check.remainingDays.toString().padEnd(4)} days\n`;
+      message += `${day.padEnd(6)} #${check.position.toLocaleString().padEnd(10)} ${check.remainingDays. toString().padEnd(4)} days\n`;
     });
     message += '```\n\n';
     
@@ -306,7 +306,7 @@ export default {
     const first = week[0];
     const last = week[week.length - 1];
     const positionProgress = first.position - last.position;
-    const daysProgress = first.remainingDays - last.remainingDays;
+    const daysProgress = first. remainingDays - last.remainingDays;
     
     message += `*📊 WEEKLY STATISTICS:*\n`;
     message += `• Queue progress: ${positionProgress > 0 ? '+' : ''}${positionProgress.toLocaleString()} positions\n`;
@@ -376,12 +376,12 @@ export default {
     });
   },
 
-  renderInterface() {
-    const totalChecks = this.history?.totalChecks || 0;
-    const weeklyChecks = this.history?.weeklyChecks?.length || 0;
+  renderInterface(env) {
+    const totalChecks = this.history?. totalChecks || 0;
+    const weeklyChecks = this.history?. weeklyChecks?. length || 0;
     
-    // Parse chat IDs for display
-    const chatIds = this.parseChatIds(process.env?.TELEGRAM_CHAT_ID || '');
+    // Parse chat IDs for display - use env parameter instead of process.env
+    const chatIds = this.parseChatIds(env?. TELEGRAM_CHAT_ID || '');
     
     return new Response(`
       <!DOCTYPE html>
@@ -395,8 +395,8 @@ export default {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             max-width: 900px; 
             margin: 40px auto; 
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding:  20px;
+            background:  linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
           }
           .container {
@@ -415,7 +415,7 @@ export default {
             background: #f8f9fa; 
             padding: 20px; 
             border-radius: 10px; 
-            margin: 20px 0;
+            margin:  20px 0;
             border-left: 4px solid #667eea;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           }
@@ -435,19 +435,19 @@ export default {
             transition: all 0.3s ease;
             font-weight: 600;
           }
-          button:hover { 
+          button: hover { 
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            box-shadow:  0 5px 15px rgba(102, 126, 234, 0.4);
           }
           @media (prefers-reduced-motion: reduce) {
             button {
               transition: none;
             }
             button:hover {
-              transform: none;
+              transform:  none;
             }
           }
-          button.secondary {
+          button. secondary {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
           }
           button.secondary:hover {
@@ -456,13 +456,13 @@ export default {
           .status { 
             margin-top: 20px; 
             padding: 15px; 
-            border-radius: 8px; 
+            border-radius:  8px; 
             background: #f8f9fa;
             min-height: 50px;
           }
           .chat-list { 
             margin-top: 10px; 
-            padding: 10px; 
+            padding:  10px; 
             background: #e9ecef; 
             border-radius: 5px; 
           }
@@ -488,7 +488,7 @@ export default {
             to { opacity: 1; transform: translateY(0); }
           }
           @media (prefers-reduced-motion: reduce) {
-            #reportResult.show {
+            #reportResult. show {
               animation: none;
             }
           }
@@ -496,20 +496,20 @@ export default {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 15px 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            border-radius:  8px;
+            margin-bottom:  20px;
             font-size: 1.3em;
             font-weight: bold;
           }
           .report-section {
-            margin: 20px 0;
+            margin:  20px 0;
             padding: 15px;
             background: #f8f9fa;
             border-radius: 8px;
             border-left: 4px solid #667eea;
           }
           .report-section h4 {
-            margin-top: 0;
+            margin-top:  0;
             color: #667eea;
           }
           .report-item {
@@ -521,8 +521,8 @@ export default {
           .report-item:last-child {
             border-bottom: none;
           }
-          .report-item .label {
-            font-weight: 600;
+          .report-item . label {
+            font-weight:  600;
             color: #555;
           }
           .report-item .value {
@@ -532,17 +532,17 @@ export default {
           .alert-box {
             background: #fff3cd;
             border: 2px solid #ffc107;
-            border-radius: 8px;
-            padding: 15px;
+            border-radius:  8px;
+            padding:  15px;
             margin: 10px 0;
             color: #856404;
           }
-          .alert-box.success {
+          .alert-box. success {
             background: #d4edda;
-            border-color: #28a745;
+            border-color:  #28a745;
             color: #155724;
           }
-          .alert-box.info {
+          .alert-box. info {
             background: #d1ecf1;
             border-color: #17a2b8;
             color: #0c5460;
@@ -563,7 +563,7 @@ export default {
           }
           .weekly-table td {
             padding: 10px 12px;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom:  1px solid #e0e0e0;
           }
           .weekly-table tr:hover {
             background: #f8f9fa;
@@ -587,7 +587,7 @@ export default {
           
           <div class="card">
             <h3>⚡ Test Schedulers (Send to Telegram)</h3>
-            <p>Test the scheduled reports by sending them to Telegram:</p>
+            <p>Test the scheduled reports by sending them to Telegram: </p>
             <div class="button-group">
               <button onclick="test('daily')">Test Daily Report</button>
               <button onclick="test('weekly')">Test Weekly Report</button>
@@ -613,7 +613,7 @@ export default {
             ${chatIds.length > 0 ? `
               <div class="chat-list">
                 ${chatIds.map((id, index) => 
-                  `<div class="chat-item">${index + 1}. ${id}</div>`
+                  `<div class="chat-item">${index + 1}. ${this.escapeHtml(id)}</div>`
                 ).join('')}
               </div>
             ` : '<p style="color: #dc3545;">⚠️ No Telegram chat IDs configured</p>'}
@@ -633,12 +633,12 @@ export default {
               const response = await fetch('/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type: type })
+                body: JSON.stringify({ type:  type })
               });
               
               const text = await response.text();
               status.innerHTML = response.ok ? 
-                '✅ ' + text : 
+                '✅ ' + text :  
                 '❌ Error: ' + text;
             } catch (error) {
               status.innerHTML = '❌ Error: ' + error.message;
@@ -649,7 +649,7 @@ export default {
             const status = document.getElementById('status');
             const reportResult = document.getElementById('reportResult');
             
-            status.innerHTML = '⏳ Generating report...';
+            status. innerHTML = '⏳ Generating report...';
             reportResult.innerHTML = '';
             reportResult.classList.remove('show');
             
@@ -663,7 +663,7 @@ export default {
               if (!response.ok) {
                 const errorText = await response.text();
                 const statusMsg = response.status === 500 ? 'Server error' : 
-                                 response.status === 503 ? 'Service unavailable' :
+                                 response.status === 503 ? 'Service unavailable' : 
                                  'Error (' + response.status + ')';
                 throw new Error(statusMsg + ': ' + errorText);
               }
@@ -676,7 +676,7 @@ export default {
               // Scroll to report
               reportResult.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             } catch (error) {
-              status.textContent = '❌ Error: ' + error.message;
+              status.textContent = '❌ Error:  ' + error.message;
             }
           }
         </script>
@@ -701,13 +701,13 @@ export default {
         } else {
           html = await this.generateDailyReportHTML(env);
         }
-        return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+        return new Response(html, { headers: { 'Content-Type':  'text/html' } });
       }
       
       // Otherwise, send to Telegram
       if (type === 'weekly') {
         await this.sendWeeklyReport(env);
-        return new Response('✅ Weekly report sent to all chats!');
+        return new Response('✅ Weekly report sent to all chats! ');
       } else {
         await this.sendDailyReport(env);
         return new Response('✅ Daily report sent to all chats!');
@@ -723,7 +723,7 @@ export default {
   },
 
   /**
-   * Generates the daily PERM status report as an HTML string.
+   * Generates the daily PERM status report as an HTML string. 
    *
    * This function fetches the latest PERM data, performs change analysis,
    * updates the in-memory history for daily checks, and builds a formatted
@@ -745,7 +745,7 @@ export default {
     this.updateHistory(data, 'daily');
     
     const { estimated_completion_date, submit_date, confidence_level, remaining_days } = data;
-    const { current_backlog, adjusted_queue_position, weekly_processing_rate, estimated_queue_wait_weeks } = data.queue_analysis;
+    const { current_backlog, adjusted_queue_position, weekly_processing_rate, estimated_queue_wait_weeks } = data. queue_analysis;
     
     const estimatedDate = this.formatDate(estimated_completion_date);
     const submitDate = this.formatDate(submit_date);
@@ -781,7 +781,7 @@ export default {
         <h4>📈 Queue Analysis</h4>
         <div class="report-item">
           <span class="label">Current Position:</span>
-          <span class="value">#${adjusted_queue_position.toLocaleString()}</span>
+          <span class="value">#${adjusted_queue_position. toLocaleString()}</span>
         </div>
         <div class="report-item">
           <span class="label">Cases Ahead in Queue:</span>
@@ -792,14 +792,14 @@ export default {
           <span class="value">${weekly_processing_rate.toLocaleString()}/week</span>
         </div>
         <div class="report-item">
-          <span class="label">Estimated Wait:</span>
-          <span class="value">~${estimated_queue_wait_weeks.toFixed(1)} weeks</span>
+          <span class="label">Estimated Wait: </span>
+          <span class="value">~${estimated_queue_wait_weeks. toFixed(1)} weeks</span>
         </div>
       </div>
     `;
     
     // Add alerts if any
-    if (analysis.alerts.length > 0) {
+    if (analysis.alerts. length > 0) {
       html += `
         <div class="report-section">
           <h4>🔔 Alerts</h4>
@@ -827,7 +827,7 @@ export default {
         <div class="report-section">
           <h4>📊 Comparison with Last Check</h4>
           <div class="alert-box success">
-            <strong>Position Improvement:</strong> ${analysis.positionImprovement.amount.toLocaleString()} positions better (${analysis.positionImprovement.percentage}% improvement)
+            <strong>Position Improvement:</strong> ${analysis. positionImprovement. amount. toLocaleString()} positions better (${analysis.positionImprovement.percentage}% improvement)
           </div>
         </div>
       `;
@@ -839,9 +839,9 @@ export default {
   /**
    * Generates an HTML weekly summary report for the current PERM data.
    *
-   * This uses the accumulated entries in history.weeklyChecks to build a
+   * This uses the accumulated entries in history. weeklyChecks to build a
    * week-long view of position and days-left trends for the current employer
-   * first-letter grouping. If no weekly history is available yet (i.e.,
+   * first-letter grouping.  If no weekly history is available yet (i.e.,
    * history.weeklyChecks is empty), an informational HTML message is
    * returned explaining that weekly data is not yet available.
    *
@@ -854,7 +854,7 @@ export default {
   async generateWeeklyReportHTML(env) {
     const currentData = await this.fetchPERMData(env);
     
-    if (this.history.weeklyChecks.length === 0) {
+    if (this.history.weeklyChecks. length === 0) {
       // If no weekly history, show a message
       return `
         <div class="report-header">
@@ -863,7 +863,7 @@ export default {
         <div class="report-section">
           <div class="alert-box info">
             <strong>No weekly data available yet.</strong><br>
-            Weekly reports require multiple daily checks throughout the week. Please check back after the scheduled daily reports have run for several days.
+            Weekly reports require multiple daily checks throughout the week.  Please check back after the scheduled daily reports have run for several days.
           </div>
         </div>
       `;
@@ -872,7 +872,7 @@ export default {
     const { employer_first_letter } = currentData;
     const week = this.history.weeklyChecks;
     
-    const firstDate = this.formatDate(week[0].timestamp);
+    const firstDate = this.formatDate(week[0]. timestamp);
     const lastDate = this.formatDate(new Date().toISOString());
     
     let html = `
@@ -906,7 +906,7 @@ export default {
     `;
     
     week.forEach((check, index) => {
-      const day = this.WEEKDAY_NAMES[new Date(check.timestamp).getDay()];
+      const day = this. WEEKDAY_NAMES[new Date(check.timestamp).getDay()];
       html += `
             <tr>
               <td>${day}</td>
@@ -926,7 +926,7 @@ export default {
     const first = week[0];
     const last = week[week.length - 1];
     const positionProgress = first.position - last.position;
-    const daysProgress = first.remainingDays - last.remainingDays;
+    const daysProgress = first.remainingDays - last. remainingDays;
     const dailyAverage = (positionProgress / week.length).toFixed(0);
     
     html += `
