@@ -98,7 +98,7 @@ export default {
       // Add new report
       reports.push(reportData);
       
-      // Keep only last 7 days
+      // Keep only last 7 days (store 7 to have history, return 6 for weekly summary)
       if (reports.length > 7) {
         reports = reports.slice(-7);
       }
@@ -131,7 +131,7 @@ export default {
       const reports = JSON.parse(reportsJson);
       console.log(`✅ Found ${reports.length} recent daily reports in storage`);
       
-      // Return last 6 reports
+      // Return last 6 reports for weekly summary (6 days Mon-Sat, plus Sunday's report)
       return reports.slice(-6);
     } catch (error) {
       console.error('❌ Error fetching report history:', error.message);
@@ -233,8 +233,8 @@ export default {
     
     // Compare with last check
     if (this.history.lastCheck) {
-      const { position:  oldPos, remainingDays: oldDays } = this.history.lastCheck;
-      const { adjusted_queue_position: newPos, remaining_days: newDays } = newData. queue_analysis;
+      const { position: oldPos, remainingDays: oldDays } = this.history.lastCheck;
+      const { adjusted_queue_position: newPos, remaining_days: newDays } = newData.queue_analysis;
       
       // 1. Queue position analysis
       if (newPos < oldPos) {
