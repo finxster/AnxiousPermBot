@@ -133,8 +133,8 @@ export default {
     try {
       // Parse position from message like "• Current Position: #45,600"
       const positionMatch = messageText.match(/Current Position:\s*#([\d,]+)/);
-      // Parse days remaining from message like "• Days Remaining: ⏱️ 152 days"
-      const daysMatch = messageText.match(/Days Remaining:\s*⏱️\s*(\d+)\s*days/);
+      // Parse days remaining from message like "*Days Remaining:* ⏱️ 152 days"
+      const daysMatch = messageText.match(/Days Remaining[:\*\s]*⏱️\s*(\d+)\s*days/);
       
       if (!positionMatch || !daysMatch) {
         console.warn('⚠️ Could not parse report data from message');
