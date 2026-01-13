@@ -76,82 +76,66 @@ export default {
     
     // Update history
     this.updateHistory(data, 'daily');
+    
+    // Store report data for weekly summary (if KV is available)
+    if (env.REPORT_HISTORY) {
+      await this.storeDailyReportData(env, data);
+    }
   },
 
-  async fetchRecentReportsFromTelegram(env) {
-    console.log('📥 Fetching recent reports from Telegram chat history...');
+  async storeDailyReportData(env, data) {
+    try {
+      const reportData = {
+        timestamp: new Date().toISOString(),
+        position: data.queue_analysis.adjusted_queue_position,
+        remainingDays: data.remaining_days
+      };
+      
+      // Get existing reports
+      const existingReportsJson = await env.REPORT_HISTORY.get('daily_reports');
+      let reports = existingReportsJson ? JSON.parse(existingReportsJson) : [];
+      
+      // Add new report
+      reports.push(reportData);
+      
+      // Keep only last 7 days
+      if (reports.length > 7) {
+        reports = reports.slice(-7);
+      }
+      
+      // Store back
+      await env.REPORT_HISTORY.put('daily_reports', JSON.stringify(reports));
+      console.log(`✅ Stored daily report data (${reports.length} reports in history)`);
+    } catch (error) {
+      console.error('❌ Error storing daily report data:', error.message);
+      // Don't fail the entire operation if storage fails
+    }
+  },
+
+  async fetchRecentReportsFromStorage(env) {
+    console.log('📥 Fetching recent reports from storage...');
     
-    const chatIds = this.parseChatIds(env.TELEGRAM_CHAT_ID);
-    if (chatIds.length === 0) {
-      console.warn('⚠️ No chat IDs configured, cannot fetch history');
+    if (!env.REPORT_HISTORY) {
+      console.warn('⚠️ REPORT_HISTORY KV namespace not configured');
       return [];
     }
     
-    // Use the first chat ID to fetch history
-    const chatId = chatIds[0];
-    const telegramUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getUpdates`;
-    
     try {
-      const response = await fetch(telegramUrl, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const reportsJson = await env.REPORT_HISTORY.get('daily_reports');
       
-      const result = await response.json();
-      
-      if (!result.ok) {
-        console.error('❌ Failed to fetch Telegram updates:', result.description);
+      if (!reportsJson) {
+        console.warn('⚠️ No report history found in storage');
         return [];
       }
       
-      // Filter messages from bot to the specific chat that contain daily reports
-      const botMessages = result.result
-        .filter(update => 
-          update.message && 
-          update.message.from && 
-          update.message.from.is_bot &&
-          update.message.chat.id.toString() === chatId &&
-          update.message.text &&
-          update.message.text.includes('DAILY REPORT')
-        )
-        .map(update => update.message)
-        .slice(-6); // Get last 6 daily reports
+      const reports = JSON.parse(reportsJson);
+      console.log(`✅ Found ${reports.length} recent daily reports in storage`);
       
-      console.log(`✅ Found ${botMessages.length} recent daily reports in chat history`);
-      
-      // Parse the messages to extract data
-      const parsedReports = botMessages.map(msg => this.parseDailyReportMessage(msg.text, msg.date));
-      
-      return parsedReports.filter(report => report !== null);
+      // Return last 6 reports
+      return reports.slice(-6);
     } catch (error) {
-      console.error('❌ Error fetching Telegram history:', error.message);
+      console.error('❌ Error fetching report history:', error.message);
       return [];
-    }
-  },
-
-  parseDailyReportMessage(messageText, timestamp) {
-    try {
-      // Parse position from message like "• Current Position: #45,600"
-      const positionMatch = messageText.match(/Current Position:\s*#([\d,]+)/);
-      // Parse days remaining from message like "*Days Remaining:* ⏱️ 152 days"
-      const daysMatch = messageText.match(/Days Remaining[:\*\s]*⏱️\s*(\d+)\s*days/);
-      
-      if (!positionMatch || !daysMatch) {
-        console.warn('⚠️ Could not parse report data from message');
-        return null;
-      }
-      
-      const position = parseInt(positionMatch[1].replace(/,/g, ''));
-      const remainingDays = parseInt(daysMatch[1]);
-      
-      return {
-        timestamp: new Date(timestamp * 1000).toISOString(),
-        position: position,
-        remainingDays: remainingDays
-      };
-    } catch (error) {
-      console.error('❌ Error parsing daily report message:', error.message);
-      return null;
     }
   },
 
@@ -159,7 +143,7 @@ export default {
     console.log('📊 Sending weekly report...');
     
     const currentData = await this.fetchPERMData(env);
-    const weeklyData = await this.fetchRecentReportsFromTelegram(env);
+    const weeklyData = await this.fetchRecentReportsFromStorage(env);
     const weeklyMessage = await this.formatWeeklyMessage(currentData, weeklyData);
     
     await this.sendToMultipleTelegramChats(env, weeklyMessage);
@@ -344,9 +328,9 @@ export default {
   },
 
   async formatWeeklyMessage(currentData, weeklyData = []) {
-    // If no weekly data from chat history, return a message indicating insufficient data
+    // If no weekly data from storage, return a message indicating insufficient data
     if (weeklyData.length === 0) {
-      return `*📊 WEEKLY SUMMARY*\n\n_Unable to generate weekly report: No historical data found in chat history._\n\nPlease ensure daily reports have been sent for at least a few days to generate a weekly summary.`;
+      return `*📊 WEEKLY SUMMARY*\n\n_Unable to generate weekly report: No historical data found in storage._\n\nPlease ensure daily reports have been sent for at least a few days to generate a weekly summary.\n\n_Note: Report history storage requires the REPORT_HISTORY KV namespace to be configured._`;
     }
     
     const { employer_first_letter } = currentData;
@@ -901,9 +885,9 @@ export default {
   /**
    * Generates an HTML weekly summary report for the current PERM data.
    *
-   * This fetches recent daily reports from Telegram chat history to build a
+   * This fetches recent daily reports from Cloudflare KV storage to build a
    * week-long view of position and days-left trends for the current employer
-   * first-letter grouping. If no weekly history is available from chat, an
+   * first-letter grouping. If no weekly history is available from storage, an
    * informational HTML message is returned explaining that weekly data is not
    * yet available.
    *
@@ -915,7 +899,7 @@ export default {
    */
   async generateWeeklyReportHTML(env) {
     const currentData = await this.fetchPERMData(env);
-    const weeklyData = await this.fetchRecentReportsFromTelegram(env);
+    const weeklyData = await this.fetchRecentReportsFromStorage(env);
     
     if (weeklyData.length === 0) {
       // If no weekly history, show a message
@@ -926,7 +910,8 @@ export default {
         <div class="report-section">
           <div class="alert-box info">
             <strong>No weekly data available yet.</strong><br>
-            Weekly reports require multiple daily reports to be found in Telegram chat history. Please check back after the scheduled daily reports have run for several days.
+            Weekly reports require multiple daily reports to be stored. Please check back after the scheduled daily reports have run for several days.<br><br>
+            <strong>Note:</strong> Report history storage requires the REPORT_HISTORY KV namespace to be configured in Cloudflare Workers.
           </div>
         </div>
       `;
