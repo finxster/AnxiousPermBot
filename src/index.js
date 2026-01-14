@@ -131,7 +131,7 @@ export default {
       const reports = JSON.parse(reportsJson);
       console.log(`✅ Found ${reports.length} recent daily reports in storage`);
       
-      // Return last 6 reports for weekly summary (6 days Mon-Sat, plus Sunday's report)
+      // Return last 6 daily reports (from Monday through Saturday) for the weekly summary
       return reports.slice(-6);
     } catch (error) {
       console.error('❌ Error fetching report history:', error.message);
