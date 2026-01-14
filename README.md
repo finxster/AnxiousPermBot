@@ -53,7 +53,22 @@ Variable | Description | Example
 TELEGRAM_BOT_TOKEN | Your bot token from BotFather | 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 TELEGRAM_CHAT_ID | Chat ID(s), comma-separated | 123456789,987654321
 
-### 5. Set Up Cron Trigger
+### 5. Configure KV Storage for Weekly Reports
+
+To enable weekly report history:
+
+1. In Cloudflare Dashboard, go to Workers & Pages -> KV
+2. Click "Create a namespace" 
+3. Name it: `PERM_REPORT_HISTORY`
+4. Go to your Worker -> Settings -> Variables -> KV Namespace Bindings
+5. Click "Add binding"
+6. Set Variable name: `REPORT_HISTORY`
+7. Select the KV namespace you created
+8. Click "Save"
+
+**Note:** Weekly reports require this KV storage to persist daily report data. Without it, weekly reports will show a "no data available" message, but daily reports will continue to work normally.
+
+### 6. Set Up Cron Trigger
 
 1. In your Worker, go to "Triggers"
 2. Click "Add Cron Trigger"
