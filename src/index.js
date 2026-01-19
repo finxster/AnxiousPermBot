@@ -69,16 +69,21 @@ export default {
     console.log('📅 Sending daily report...');
     
     const data = await this.fetchPERMData(env);
+    
+    // Fetch previous day's data for comparison
+    const previousData = await this.fetchPreviousDayData(env);
+    
     const analysis = await this.analyzeChanges(data);
-    const message = await this.formatDailyMessage(data, analysis);
+    const message = await this.formatDailyMessage(data, analysis, previousData);
     
     await this.sendToMultipleTelegramChats(env, message);
     
     // Update history
     this.updateHistory(data, 'daily');
     
-    // Store report data for weekly summary (if KV is available)
+    // Store today's snapshot for future comparison (if KV is available)
     if (env.REPORT_HISTORY) {
+      await this.storeDailySnapshot(env, data);
       await this.storeDailyReportData(env, data);
     }
   },
@@ -110,6 +115,164 @@ export default {
       console.error('❌ Error storing daily report data:', error.message);
       // Don't fail the entire operation if storage fails
     }
+  },
+
+  async storeDailySnapshot(env, data) {
+    try {
+      const today = new Date();
+      const dateKey = this.getDateKey(today);
+      
+      const snapshot = {
+        timestamp: today.toISOString(),
+        dateKey: dateKey,
+        estimatedDate: data.estimated_completion_date,
+        remainingDays: data.remaining_days,
+        position: data.queue_analysis.adjusted_queue_position,
+        casesAhead: data.queue_analysis.current_backlog,
+        processingRate: data.queue_analysis.weekly_processing_rate,
+        estimatedWait: data.queue_analysis.estimated_queue_wait_weeks
+      };
+      
+      await env.REPORT_HISTORY.put(`daily_snapshot_${dateKey}`, JSON.stringify(snapshot));
+      console.log(`✅ Stored daily snapshot for ${dateKey}`);
+    } catch (error) {
+      console.error('❌ Error storing daily snapshot:', error.message);
+      // Don't fail the entire operation if storage fails
+    }
+  },
+
+  async fetchPreviousDayData(env) {
+    console.log('📥 Fetching previous day data for comparison...');
+    
+    if (!env.REPORT_HISTORY) {
+      console.warn('⚠️ REPORT_HISTORY KV namespace not configured');
+      return null;
+    }
+    
+    try {
+      const today = new Date();
+      const previousDate = this.getPreviousReportDate(today);
+      const dateKey = this.getDateKey(previousDate);
+      
+      const snapshotJson = await env.REPORT_HISTORY.get(`daily_snapshot_${dateKey}`);
+      
+      if (!snapshotJson) {
+        console.warn(`⚠️ No snapshot found for ${dateKey}`);
+        return null;
+      }
+      
+      const snapshot = JSON.parse(snapshotJson);
+      console.log(`✅ Found previous day snapshot for ${dateKey}`);
+      return snapshot;
+    } catch (error) {
+      console.error('❌ Error fetching previous day data:', error.message);
+      return null;
+    }
+  },
+
+  getDateKey(date) {
+    // Returns date in YYYY-MM-DD format
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  },
+
+  getPreviousReportDate(today) {
+    // Clone the date to avoid mutating the original
+    const previousDate = new Date(today);
+    const dayOfWeek = today.getUTCDay();
+    
+    // If today is Monday (1), compare with Saturday (skip Sunday)
+    if (dayOfWeek === 1) {
+      // Go back 2 days to get Saturday
+      previousDate.setUTCDate(today.getUTCDate() - 2);
+    } else {
+      // For other days, just go back 1 day
+      previousDate.setUTCDate(today.getUTCDate() - 1);
+    }
+    
+    return previousDate;
+  },
+
+  calculateDeltas(currentData, previousData) {
+    if (!previousData) {
+      return null;
+    }
+
+    const deltas = {
+      estimatedDate: this.calculateDateDelta(currentData.estimated_completion_date, previousData.estimatedDate),
+      remainingDays: this.calculateNumberDelta(
+        currentData.remaining_days,
+        previousData.remainingDays,
+        'days',
+        true  // lower is better
+      ),
+      position: this.calculateNumberDelta(
+        currentData.queue_analysis.adjusted_queue_position,
+        previousData.position,
+        'positions',
+        true  // lower is better
+      ),
+      casesAhead: this.calculateNumberDelta(
+        currentData.queue_analysis.current_backlog,
+        previousData.casesAhead,
+        'cases',
+        true  // lower is better
+      ),
+      processingRate: this.calculateNumberDelta(
+        currentData.queue_analysis.weekly_processing_rate,
+        previousData.processingRate,
+        '/week',
+        false  // higher is better
+      ),
+      estimatedWait: this.calculateNumberDelta(
+        currentData.queue_analysis.estimated_queue_wait_weeks,
+        previousData.estimatedWait,
+        'weeks',
+        true  // lower is better
+      )
+    };
+
+    return deltas;
+  },
+
+  calculateDateDelta(currentDateStr, previousDateStr) {
+    const current = new Date(currentDateStr);
+    const previous = new Date(previousDateStr);
+    const diffMs = current - previous;
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return { arrow: '↔️', text: 'no change', value: 0 };
+    } else if (diffDays > 0) {
+      // Date moved forward (worse)
+      return { arrow: '🔴▲', text: `+${diffDays} days`, value: diffDays };
+    } else {
+      // Date moved earlier (better)
+      return { arrow: '🟢▼', text: `${diffDays} days`, value: diffDays };
+    }
+  },
+
+  calculateNumberDelta(current, previous, unit, lowerIsBetter) {
+    const diff = current - previous;
+    
+    if (diff === 0) {
+      return { arrow: '↔️', text: 'no change', value: 0 };
+    }
+    
+    const isImprovement = lowerIsBetter ? (diff < 0) : (diff > 0);
+    const arrow = isImprovement ? '🟢▼' : '🔴▲';
+    const sign = diff > 0 ? '+' : '';
+    const formattedDiff = typeof current === 'number' && current > 1000 
+      ? diff.toLocaleString() 
+      : diff.toFixed(unit === 'weeks' || unit === '/week' ? 1 : 0);
+    
+    return { 
+      arrow: arrow, 
+      text: `${sign}${formattedDiff} ${unit}`,
+      value: diff 
+    };
   },
 
   async fetchRecentReportsFromStorage(env) {
@@ -287,7 +450,7 @@ export default {
 
   // ========== FORMATTING FUNCTIONS ==========
 
-  async formatDailyMessage(data, analysis) {
+  async formatDailyMessage(data, analysis, previousData = null) {
     const { estimated_completion_date, submit_date, confidence_level, remaining_days } = data;
     const { current_backlog, adjusted_queue_position, weekly_processing_rate, estimated_queue_wait_weeks } = data. queue_analysis;
     
@@ -295,17 +458,66 @@ export default {
     const submitDate = this.formatDate(submit_date);
     const confidence = Math.round(confidence_level * 100);
     
+    // Calculate deltas if previous data is available
+    const deltas = this.calculateDeltas(data, previousData);
+    
     let message = `*📅 DAILY REPORT - ${this.formatDate(new Date().toISOString())}*
 
-*Estimated Date: * 🗓️ *${estimatedDate}* (${confidence}% confidence)
+*Estimated Date: * 🗓️ *${estimatedDate}* (${confidence}% confidence)`;
+    
+    // Add delta for estimated date if available
+    if (deltas && deltas.estimatedDate) {
+      message += ` ${deltas.estimatedDate.arrow} ${deltas.estimatedDate.text}`;
+    }
+    
+    message += `
 *Submit Date:* 📋 ${submitDate}
-*Days Remaining:* ⏱️ ${remaining_days} days
+*Days Remaining:* ⏱️ ${remaining_days} days`;
+    
+    // Add delta for remaining days if available
+    if (deltas && deltas.remainingDays) {
+      message += ` ${deltas.remainingDays.arrow} ${deltas.remainingDays.text}`;
+    }
+    
+    message += `
 
 *📊 Queue Position:*
-• Current Position: #${adjusted_queue_position.toLocaleString()}
-• Ahead in Queue: ${current_backlog. toLocaleString()} cases
-• Processing Rate: ${weekly_processing_rate.toLocaleString()}/week
+• Current Position: #${adjusted_queue_position.toLocaleString()}`;
+    
+    // Add delta for position if available
+    if (deltas && deltas.position) {
+      message += ` ${deltas.position.arrow} ${deltas.position.text}`;
+    }
+    
+    message += `
+• Ahead in Queue: ${current_backlog. toLocaleString()} cases`;
+    
+    // Add delta for cases ahead if available
+    if (deltas && deltas.casesAhead) {
+      message += ` ${deltas.casesAhead.arrow} ${deltas.casesAhead.text}`;
+    }
+    
+    message += `
+• Processing Rate: ${weekly_processing_rate.toLocaleString()}/week`;
+    
+    // Add delta for processing rate if available
+    if (deltas && deltas.processingRate) {
+      message += ` ${deltas.processingRate.arrow} ${deltas.processingRate.text}`;
+    }
+    
+    message += `
 • Estimated Wait: ~${estimated_queue_wait_weeks. toFixed(1)} weeks`;
+    
+    // Add delta for estimated wait if available
+    if (deltas && deltas.estimatedWait) {
+      message += ` ${deltas.estimatedWait.arrow} ${deltas.estimatedWait.text}`;
+    }
+
+    // Add "No comparison data" message if no previous data
+    if (!previousData) {
+      message += `\n\n*ℹ️ No comparison data available*`;
+      message += `\n_This is the first report or previous day's data is not yet stored._`;
+    }
 
     // Add alerts if any
     if (analysis.alerts. length > 0) {
@@ -785,6 +997,7 @@ export default {
    */
   async generateDailyReportHTML(env) {
     const data = await this.fetchPERMData(env);
+    const previousData = await this.fetchPreviousDayData(env);
     const analysis = await this.analyzeChanges(data);
     
     // Update history
@@ -798,6 +1011,9 @@ export default {
     const confidence = Math.round(confidence_level * 100);
     const today = this.formatDate(new Date().toISOString());
     
+    // Calculate deltas if previous data is available
+    const deltas = this.calculateDeltas(data, previousData);
+    
     let html = `
       <div class="report-header">
         📅 Daily Report - ${today}
@@ -807,7 +1023,13 @@ export default {
         <h4>📊 Key Information</h4>
         <div class="report-item">
           <span class="label">🗓️ Estimated Completion Date:</span>
-          <span class="value">${estimatedDate}</span>
+          <span class="value">${estimatedDate}`;
+    
+    if (deltas && deltas.estimatedDate) {
+      html += ` ${deltas.estimatedDate.arrow} ${this.escapeHtml(deltas.estimatedDate.text)}`;
+    }
+    
+    html += `</span>
         </div>
         <div class="report-item">
           <span class="label">🎯 Confidence Level:</span>
@@ -819,7 +1041,13 @@ export default {
         </div>
         <div class="report-item">
           <span class="label">⏱️ Days Remaining:</span>
-          <span class="value">${remaining_days} days</span>
+          <span class="value">${remaining_days} days`;
+    
+    if (deltas && deltas.remainingDays) {
+      html += ` ${deltas.remainingDays.arrow} ${this.escapeHtml(deltas.remainingDays.text)}`;
+    }
+    
+    html += `</span>
         </div>
       </div>
       
@@ -827,22 +1055,58 @@ export default {
         <h4>📈 Queue Analysis</h4>
         <div class="report-item">
           <span class="label">Current Position:</span>
-          <span class="value">#${adjusted_queue_position. toLocaleString()}</span>
+          <span class="value">#${adjusted_queue_position. toLocaleString()}`;
+    
+    if (deltas && deltas.position) {
+      html += ` ${deltas.position.arrow} ${this.escapeHtml(deltas.position.text)}`;
+    }
+    
+    html += `</span>
         </div>
         <div class="report-item">
           <span class="label">Cases Ahead in Queue:</span>
-          <span class="value">${current_backlog.toLocaleString()}</span>
+          <span class="value">${current_backlog.toLocaleString()}`;
+    
+    if (deltas && deltas.casesAhead) {
+      html += ` ${deltas.casesAhead.arrow} ${this.escapeHtml(deltas.casesAhead.text)}`;
+    }
+    
+    html += `</span>
         </div>
         <div class="report-item">
           <span class="label">Processing Rate:</span>
-          <span class="value">${weekly_processing_rate.toLocaleString()}/week</span>
+          <span class="value">${weekly_processing_rate.toLocaleString()}/week`;
+    
+    if (deltas && deltas.processingRate) {
+      html += ` ${deltas.processingRate.arrow} ${this.escapeHtml(deltas.processingRate.text)}`;
+    }
+    
+    html += `</span>
         </div>
         <div class="report-item">
           <span class="label">Estimated Wait: </span>
-          <span class="value">~${estimated_queue_wait_weeks. toFixed(1)} weeks</span>
+          <span class="value">~${estimated_queue_wait_weeks. toFixed(1)} weeks`;
+    
+    if (deltas && deltas.estimatedWait) {
+      html += ` ${deltas.estimatedWait.arrow} ${this.escapeHtml(deltas.estimatedWait.text)}`;
+    }
+    
+    html += `</span>
         </div>
       </div>
     `;
+    
+    // Add "No comparison data" message if no previous data
+    if (!previousData) {
+      html += `
+        <div class="report-section">
+          <div class="alert-box info">
+            <strong>ℹ️ No comparison data available</strong><br>
+            This is the first report or previous day's data is not yet stored.
+          </div>
+        </div>
+      `;
+    }
     
     // Add alerts if any
     if (analysis.alerts. length > 0) {
