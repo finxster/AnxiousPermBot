@@ -246,10 +246,10 @@ export default {
     if (diffDays === 0) {
       return { arrow: '↔️', text: 'no change', value: 0 };
     } else if (diffDays > 0) {
-      // Date moved forward (worse)
+      // Date moved forward - increase (red up arrow)
       return { arrow: '🔴▲', text: `+${diffDays} days`, value: diffDays };
     } else {
-      // Date moved earlier (better)
+      // Date moved earlier - decrease (green down arrow)
       return { arrow: '🟢▼', text: `${diffDays} days`, value: diffDays };
     }
   },
@@ -261,8 +261,8 @@ export default {
       return { arrow: '↔️', text: 'no change', value: 0 };
     }
     
-    const isImprovement = lowerIsBetter ? (diff < 0) : (diff > 0);
-    const arrow = isImprovement ? '🟢▼' : '🔴▲';
+    // Arrow based on direction: increase = 🔴▲, decrease = 🟢▼
+    const arrow = diff > 0 ? '🔴▲' : '🟢▼';
     const sign = diff > 0 ? '+' : '';
     const formattedDiff = typeof current === 'number' && current > 1000 
       ? diff.toLocaleString() 

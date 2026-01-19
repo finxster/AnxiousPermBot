@@ -53,9 +53,9 @@ Variable | Description | Example
 TELEGRAM_BOT_TOKEN | Your bot token from BotFather | 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 TELEGRAM_CHAT_ID | Chat ID(s), comma-separated | 123456789,987654321
 
-### 5. Configure KV Storage for Weekly Reports
+### 5. Configure KV Storage for Reports
 
-To enable weekly report history:
+To enable weekly summaries and daily report comparisons:
 
 1. In Cloudflare Dashboard, go to Workers & Pages -> KV
 2. Click "Create a namespace" 
@@ -66,7 +66,13 @@ To enable weekly report history:
 7. Select the KV namespace you created
 8. Click "Save"
 
-**Note:** Weekly reports require this KV storage to persist daily report data. Without it, weekly reports will show a "no data available" message, but daily reports will continue to work normally.
+**Important:** KV storage is required for:
+- **Daily Report Comparisons**: Day-to-day delta indicators (🔴▲/🟢▼) that show changes from the previous day
+- **Weekly Summaries**: Historical data for the weekly progress table
+
+Without KV storage:
+- Daily reports will still be sent, but won't show comparison deltas (will display "No comparison data available")
+- Weekly reports will show a "no data available" message
 
 ### 6. Set Up Cron Trigger
 
@@ -103,18 +109,20 @@ POST https://perm-backend-production.up.railway.app/api/predictions/from-date
 
 ### Daily Report (Monday-Saturday)
 
+Daily reports now include **day-to-day comparisons** with delta indicators:
+
 ```
 DAILY REPORT - Dec 28, 2024
 
-Estimated Date: May 29, 2026 (80% confidence)
-Submit Date: Dec 19, 2024
-Days Remaining: 152 days
+Estimated Date: 🗓️ May 29, 2026 (80% confidence) 🟢▼ -1 days
+Submit Date: 📋 Dec 19, 2024
+Days Remaining: ⏱️ 152 days 🟢▼ -1 days
 
-Queue Position:
-• Current Position: #45,600
-• Ahead in Queue: 133,325 cases
-• Processing Rate: 2,099/week
-• Estimated Wait: ~21.7 weeks
+📊 Queue Position:
+• Current Position: #45,600 🟢▼ -500 positions
+• Ahead in Queue: 133,325 cases 🟢▼ -500 cases
+• Processing Rate: 2,099/week 🔴▲ +49 /week
+• Estimated Wait: ~21.7 weeks 🟢▼ -0.4 weeks
 
 ALERTS:
 • MOVED UP 500 positions in queue!
@@ -122,6 +130,19 @@ ALERTS:
 VS LAST CHECK:
 • Position: 500 less
 • Improvement: 1.1%
+```
+
+**Delta Indicators Explained:**
+- 🔴▲ Red up arrow: Value increased from previous day
+- 🟢▼ Green down arrow: Value decreased from previous day
+- ↔️ No change: Value stayed the same
+
+**Note:** On Mondays, the comparison is made with Saturday's data (Sunday reports are weekly summaries only).
+
+If no previous day's data is available (first report or new deployment), you'll see:
+```
+ℹ️ No comparison data available
+This is the first report or previous day's data is not yet stored.
 ```
 
 ### Weekly Report (Sunday)
@@ -159,6 +180,24 @@ Access your Worker URL (e.g., https://perm-tracker.your-username.workers.dev) to
 - Manual Triggers: Test daily/weekly reports
 - Chat List: See all configured Telegram chats
 - History: View this week's tracking data
+
+### Testing the Comparison Feature
+
+To test the new day-to-day comparison feature:
+
+1. **First Day**: Send a daily report - it will show "No comparison data available"
+2. **Second Day**: Send another daily report - it will show deltas comparing with the first day
+3. **Monday Test**: On Monday, the comparison will automatically use Saturday's data instead of Sunday
+
+You can use the "Test Daily Report" button in the web interface or wait for the scheduled cron job to trigger.
+
+**Note**: The comparison data is stored in Cloudflare KV with keys like `daily_snapshot_2024-12-28`. Each day's snapshot includes:
+- Estimated completion date
+- Days remaining
+- Queue position
+- Cases ahead
+- Processing rate
+- Estimated wait time
 
 ## Customization
 
