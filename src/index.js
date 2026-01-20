@@ -513,12 +513,6 @@ export default {
       message += ` ${deltas.estimatedWait.arrow} ${deltas.estimatedWait.text}`;
     }
 
-    // Add "No comparison data" message if no previous data
-    if (!previousData) {
-      message += `\n\n*ℹ️ No comparison data available*`;
-      message += `\n_This is the first report or previous day's data is not yet stored._`;
-    }
-
     // Add alerts if any
     if (analysis.alerts. length > 0) {
       message += `\n\n*🔔 ALERTS:*\n`;
@@ -1095,18 +1089,6 @@ export default {
         </div>
       </div>
     `;
-    
-    // Add "No comparison data" message if no previous data
-    if (!previousData) {
-      html += `
-        <div class="report-section">
-          <div class="alert-box info">
-            <strong>ℹ️ No comparison data available</strong><br>
-            This is the first report or previous day's data is not yet stored.
-          </div>
-        </div>
-      `;
-    }
     
     // Add alerts if any
     if (analysis.alerts. length > 0) {

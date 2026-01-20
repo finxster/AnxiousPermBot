@@ -71,7 +71,7 @@ To enable weekly summaries and daily report comparisons:
 - **Weekly Summaries**: Historical data for the weekly progress table
 
 Without KV storage:
-- Daily reports will still be sent, but won't show comparison deltas (will display "No comparison data available")
+- Daily reports will still be sent, but won't show comparison deltas
 - Weekly reports will show a "no data available" message
 
 ### 6. Set Up Cron Trigger
@@ -139,11 +139,7 @@ VS LAST CHECK:
 
 **Note:** On Mondays, the comparison is made with Saturday's data (Sunday reports are weekly summaries only).
 
-If no previous day's data is available (first report or new deployment), you'll see:
-```
-ℹ️ No comparison data available
-This is the first report or previous day's data is not yet stored.
-```
+If no previous day's data is available (first report or new deployment), the report will be generated normally without delta indicators.
 
 ### Weekly Report (Sunday)
 
@@ -185,7 +181,7 @@ Access your Worker URL (e.g., https://perm-tracker.your-username.workers.dev) to
 
 To test the new day-to-day comparison feature:
 
-1. **First Day**: Send a daily report - it will show "No comparison data available"
+1. **First Day**: Send a daily report - it will be a regular report without deltas
 2. **Second Day**: Send another daily report - it will show deltas comparing with the first day
 3. **Monday Test**: On Monday, the comparison will automatically use Saturday's data instead of Sunday
 
