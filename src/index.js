@@ -479,8 +479,20 @@ export default {
       message += ` ${deltas.remainingDays.arrow} ${deltas.remainingDays.text}`;
     }
     
+    // Calculate and add journey metrics
+    const journey = this.calculateJourneyMetrics(data);
+    const progressBar = this.generateProgressBar(journey.progressPercentage);
+    
     message += `
 
+*🛤️ Journey Progress:*
+• Days Passed: ${journey.daysPassed} days
+• Remaining: ${journey.remainingDays} days
+• Total Journey: ${journey.totalJourneyDays} days
+
+Progress: ${journey.progressPercentage}%
+${progressBar}
+    
 *📊 Queue Position:*
 • Current Position: #${adjusted_queue_position.toLocaleString()}`;
     
@@ -628,6 +640,38 @@ export default {
       day: 'numeric',
       year: 'numeric'
     });
+  },
+
+  calculateJourneyMetrics(data) {
+    const { submit_date, estimated_completion_date, remaining_days } = data;
+    
+    // Calculate total journey days from submit_date to estimated_completion_date
+    const submitDate = new Date(submit_date);
+    const estimatedDate = new Date(estimated_completion_date);
+    const totalJourneyDays = Math.round((estimatedDate - submitDate) / (1000 * 60 * 60 * 24));
+    
+    // Calculate days passed (ensure non-negative)
+    const daysPassed = Math.max(0, totalJourneyDays - remaining_days);
+    
+    // Calculate progress percentage
+    const progressPercentage = totalJourneyDays > 0 ? Math.round((daysPassed / totalJourneyDays) * 100) : 0;
+    
+    return {
+      daysPassed,
+      remainingDays: remaining_days,
+      totalJourneyDays,
+      progressPercentage
+    };
+  },
+
+  generateProgressBar(progressPercentage) {
+    // Generate a visual progress bar using Unicode block characters
+    // Ensure filled blocks is between 0 and 20
+    const filledBlocks = Math.min(20, Math.max(0, Math.floor(progressPercentage / 5))); // 20 blocks for 100%
+    const emptyBlocks = 20 - filledBlocks;
+    const filled = '█'.repeat(filledBlocks);
+    const empty = '░'.repeat(emptyBlocks);
+    return `${filled}${empty}`;
   },
 
   renderInterface(env) {
@@ -825,6 +869,36 @@ export default {
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
+          }
+          .progress-container {
+            margin: 15px 0;
+          }
+          .progress-bar-wrapper {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+          }
+          .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            color: white;
+            font-weight: bold;
+          }
+          .progress-text {
+            margin-top: 8px;
+            text-align: center;
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1.1em;
           }
         </style>
       </head>
@@ -1042,6 +1116,33 @@ export default {
     }
     
     html += `</span>
+        </div>
+      </div>
+      
+      <div class="report-section">
+        <h4>🛤️ Journey Progress</h4>`;
+    
+    // Calculate journey metrics
+    const journey = this.calculateJourneyMetrics(data);
+    
+    html += `
+        <div class="report-item">
+          <span class="label">Days Passed:</span>
+          <span class="value">${journey.daysPassed} days</span>
+        </div>
+        <div class="report-item">
+          <span class="label">Remaining:</span>
+          <span class="value">${journey.remainingDays} days</span>
+        </div>
+        <div class="report-item">
+          <span class="label">Total Journey:</span>
+          <span class="value">${journey.totalJourneyDays} days</span>
+        </div>
+        <div class="progress-container" style="margin-top: 15px;">
+          <div class="progress-bar-wrapper">
+            <div class="progress-bar-fill" style="width: ${journey.progressPercentage}%"></div>
+          </div>
+          <div class="progress-text">${journey.progressPercentage}% Complete</div>
         </div>
       </div>
       
