@@ -650,8 +650,8 @@ ${progressBar}
     const estimatedDate = new Date(estimated_completion_date);
     const totalJourneyDays = Math.round((estimatedDate - submitDate) / (1000 * 60 * 60 * 24));
     
-    // Calculate days passed
-    const daysPassed = totalJourneyDays - remaining_days;
+    // Calculate days passed (ensure non-negative)
+    const daysPassed = Math.max(0, totalJourneyDays - remaining_days);
     
     // Calculate progress percentage
     const progressPercentage = totalJourneyDays > 0 ? Math.round((daysPassed / totalJourneyDays) * 100) : 0;
@@ -666,7 +666,8 @@ ${progressBar}
 
   generateProgressBar(progressPercentage) {
     // Generate a visual progress bar using Unicode block characters
-    const filledBlocks = Math.floor(progressPercentage / 5); // 20 blocks for 100%
+    // Ensure filled blocks is between 0 and 20
+    const filledBlocks = Math.min(20, Math.max(0, Math.floor(progressPercentage / 5))); // 20 blocks for 100%
     const emptyBlocks = 20 - filledBlocks;
     const filled = '█'.repeat(filledBlocks);
     const empty = '░'.repeat(emptyBlocks);
